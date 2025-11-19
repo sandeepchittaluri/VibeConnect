@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UserProfile, AppView, ChatSession, Message, Gender } from './types';
-import { MOCK_USERS, INITIAL_FREE_CHATS } from './constants';
+import { MOCK_USERS, INITIAL_FREE_CHATS, INTERESTS_LIST } from './constants';
 import { Button } from './components/Button';
 import { generateAiBio } from './services/geminiService';
 import { 
@@ -19,15 +19,27 @@ import {
   CheckCircle,
   CreditCard,
   Ghost,
-  Sparkles
+  Sparkles,
+  UserMinus,
+  ShieldAlert,
+  Check,
+  CheckCheck,
+  Bell,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
 
-// --- Components Defined Inline for Single File Structure Requirement (Wait, instructions say separate files are okay but strict structure. I will stick to a cleaner single file for components to ensure everything fits and works together perfectly without import hell in the generated output, but I will modularize as much as possible within the limitations or split if needed. The prompt asks for organized structure. I will split complex components).
-// Actually, looking at instructions: "Create a robust, well-organized, and scalable file and subdirectory structure."
-// I will implement the components in the App.tsx for simplicity of state sharing in this specific output format unless they are large. 
-// Let's separate the major views to keep App.tsx clean.
+// --- Helper for Status ---
+const getStatusColor = (status: UserProfile['status']) => {
+  switch (status) {
+    case 'online': return 'bg-green-500';
+    case 'away': return 'bg-yellow-500';
+    case 'offline': return 'bg-gray-400';
+    default: return 'bg-gray-400';
+  }
+};
 
-// --- Sub-components ---
+// --- Components Defined Inline for Single File Structure Requirement ---
 
 // 1. Auth Component
 const AuthView = ({ onLogin }: { onLogin: () => void }) => (
@@ -197,40 +209,241 @@ const NearbyView = ({
   onChat: (userId: string) => void,
   currentUserLocation?: { latitude: number, longitude: number }
 }) => {
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // Filter States
+  const [ageMin, setAgeMin] = useState(18);
+  const [ageMax, setAgeMax] = useState(60);
+  const [maxDistance, setMaxDistance] = useState(50); // km
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<'relevance' | 'age_asc' | 'distance'>('relevance');
+
+  // Helper to calculate distance
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  const toggleInterest = (interest: string) => {
+    setSelectedInterests(prev => 
+      prev.includes(interest) ? prev.filter(i => i !== interest) : [...prev, interest]
+    );
+  };
+
+  // Filter and Sort Logic
+  const processedUsers = users
+    .map(user => {
+      const distance = currentUserLocation && user.location 
+        ? calculateDistance(
+            currentUserLocation.latitude, 
+            currentUserLocation.longitude, 
+            user.location.latitude, 
+            user.location.longitude
+          )
+        : 0; // default to 0 if no loc (though we expect loc)
+      return { ...user, distance };
+    })
+    .filter(user => {
+      const isAgeMatch = user.age >= ageMin && user.age <= ageMax;
+      const isDistanceMatch = user.distance <= maxDistance;
+      const isInterestMatch = selectedInterests.length === 0 
+        || user.interests.some(i => selectedInterests.includes(i));
+      return isAgeMatch && isDistanceMatch && isInterestMatch;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'age_asc') return a.age - b.age;
+      if (sortBy === 'distance') return a.distance - b.distance;
+      // Relevance: prioritize users with matching interests
+      if (sortBy === 'relevance' && selectedInterests.length > 0) {
+         const aCount = a.interests.filter(i => selectedInterests.includes(i)).length;
+         const bCount = b.interests.filter(i => selectedInterests.includes(i)).length;
+         return bCount - aCount;
+      }
+      return 0;
+    });
+
   return (
     <div className="pb-24 p-4">
       <header className="mb-6 flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Nearby People</h2>
-        <div className="flex items-center text-sm text-gray-500 bg-white px-3 py-1 rounded-full shadow-sm">
-          <MapPin size={16} className="mr-1 text-brand-500" />
-          {currentUserLocation ? 'Location Active' : 'Locating...'}
+        <div>
+           <h2 className="text-2xl font-bold text-gray-900">Nearby People</h2>
+           {currentUserLocation && (
+             <div className="flex items-center text-xs text-gray-500 mt-1">
+               <MapPin size={12} className="mr-1 text-brand-500" />
+               Within {maxDistance} km
+             </div>
+           )}
         </div>
+        <button 
+          onClick={() => setShowFilters(true)}
+          className="p-2 bg-white border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 shadow-sm relative"
+        >
+          <SlidersHorizontal size={20} />
+          {(selectedInterests.length > 0 || ageMin > 18 || ageMax < 60) && (
+             <span className="absolute -top-1 -right-1 w-3 h-3 bg-brand-500 rounded-full border-2 border-white"></span>
+          )}
+        </button>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {users.map(user => (
-          <div key={user.id} className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-            <div className="h-48 bg-gray-200 relative">
-              <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
-                <h3 className="text-white font-bold text-lg">{user.username}, {user.age}</h3>
-              </div>
-            </div>
-            <div className="p-4">
-              <p className="text-gray-600 text-sm line-clamp-2 mb-3">{user.about}</p>
-              <div className="flex flex-wrap gap-1 mb-4">
-                {user.interests.slice(0, 3).map((tag, i) => (
-                  <span key={i} className="text-xs bg-brand-50 text-brand-700 px-2 py-1 rounded-md">{tag}</span>
-                ))}
-              </div>
-              <Button variant="outline" fullWidth onClick={() => onChat(user.id)} className="flex items-center gap-2">
-                <MessageCircle size={18} />
-                Say Hello
-              </Button>
-            </div>
+      {/* Filter Modal/Overlay */}
+      {showFilters && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-200">
+             <div className="flex justify-between items-center mb-6">
+               <h3 className="text-xl font-bold">Filters</h3>
+               <button onClick={() => setShowFilters(false)} className="p-1 text-gray-400 hover:text-gray-600">
+                 <X size={24} />
+               </button>
+             </div>
+
+             <div className="space-y-6">
+               {/* Sort */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                 <div className="relative">
+                    <select 
+                      value={sortBy} 
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl appearance-none"
+                    >
+                      <option value="relevance">Relevance</option>
+                      <option value="age_asc">Age (Youngest First)</option>
+                      <option value="distance">Distance (Nearest)</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3.5 text-gray-400 pointer-events-none" size={16} />
+                 </div>
+               </div>
+
+               {/* Age Range */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">Age Range ({ageMin} - {ageMax})</label>
+                 <div className="flex gap-4 items-center">
+                   <input 
+                      type="number" 
+                      min="18" 
+                      max={ageMax}
+                      value={ageMin} 
+                      onChange={e => setAgeMin(Number(e.target.value))}
+                      className="w-20 p-2 border rounded-lg text-center"
+                   />
+                   <div className="flex-1 h-1 bg-gray-200 rounded-full"></div>
+                   <input 
+                      type="number" 
+                      min={ageMin} 
+                      max="100"
+                      value={ageMax} 
+                      onChange={e => setAgeMax(Number(e.target.value))}
+                      className="w-20 p-2 border rounded-lg text-center"
+                   />
+                 </div>
+               </div>
+
+               {/* Distance */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">Maximum Distance: {maxDistance} km</label>
+                 <input 
+                    type="range" 
+                    min="1" 
+                    max="100" 
+                    value={maxDistance} 
+                    onChange={e => setMaxDistance(Number(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-brand-600"
+                 />
+                 <div className="flex justify-between text-xs text-gray-400 mt-1">
+                   <span>1 km</span>
+                   <span>100 km</span>
+                 </div>
+               </div>
+
+               {/* Interests */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">Interests</label>
+                 <div className="flex flex-wrap gap-2">
+                   {INTERESTS_LIST.map(interest => (
+                     <button
+                       key={interest}
+                       onClick={() => toggleInterest(interest)}
+                       className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                         selectedInterests.includes(interest)
+                           ? 'bg-brand-100 border-brand-200 text-brand-800 font-medium'
+                           : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                       }`}
+                     >
+                       {interest}
+                     </button>
+                   ))}
+                 </div>
+               </div>
+
+               <div className="pt-4 flex gap-3">
+                 <Button variant="outline" fullWidth onClick={() => {
+                    setAgeMin(18);
+                    setAgeMax(60);
+                    setMaxDistance(50);
+                    setSelectedInterests([]);
+                    setSortBy('relevance');
+                 }}>
+                   Reset
+                 </Button>
+                 <Button fullWidth onClick={() => setShowFilters(false)}>
+                   Apply Filters
+                 </Button>
+               </div>
+             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {processedUsers.length === 0 ? (
+         <div className="text-center py-20 text-gray-500">
+           <User size={48} className="mx-auto mb-4 text-gray-300" />
+           <p>No matching profiles found.</p>
+           <button onClick={() => setShowFilters(true)} className="text-brand-600 font-medium mt-2">Adjust Filters</button>
+         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {processedUsers.map(user => (
+            <div key={user.id} className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow relative">
+              <div className="h-48 bg-gray-200 relative">
+                <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+                  <h3 className="text-white font-bold text-lg">{user.username}, {user.age}</h3>
+                </div>
+                {/* Distance Badge */}
+                {user.distance !== undefined && (
+                  <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-xs px-2 py-1 rounded-full flex items-center">
+                    <MapPin size={10} className="mr-1" />
+                    {user.distance.toFixed(1)} km
+                  </div>
+                )}
+                {/* Status Badge */}
+                <div 
+                   className={`absolute top-3 left-3 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(user.status)} shadow-sm`}
+                   title={user.status}
+                ></div>
+              </div>
+              <div className="p-4">
+                <p className="text-gray-600 text-sm line-clamp-2 mb-3">{user.about}</p>
+                <div className="flex flex-wrap gap-1 mb-4">
+                  {user.interests.slice(0, 3).map((tag, i) => (
+                    <span key={i} className="text-xs bg-brand-50 text-brand-700 px-2 py-1 rounded-md">{tag}</span>
+                  ))}
+                </div>
+                <Button variant="outline" fullWidth onClick={() => onChat(user.id)} className="flex items-center gap-2">
+                  <MessageCircle size={18} />
+                  Say Hello
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -266,7 +479,10 @@ const ChatListView = ({
                 onClick={() => onSelectChat(session.id)}
                 className="bg-white p-4 rounded-2xl shadow-sm flex items-center gap-4 cursor-pointer hover:bg-gray-50 transition-colors"
               >
-                <img src={otherUser.avatarUrl} alt={otherUser.username} className="w-12 h-12 rounded-full object-cover" />
+                <div className="relative">
+                   <img src={otherUser.avatarUrl} alt={otherUser.username} className="w-12 h-12 rounded-full object-cover" />
+                   <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(otherUser.status)}`}></div>
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
                     <h3 className="font-semibold text-gray-900 truncate">{otherUser.username}</h3>
@@ -274,9 +490,18 @@ const ChatListView = ({
                       {lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500 truncate">
-                    {lastMsg?.type === 'text' ? lastMsg.content : `Sent a ${lastMsg?.type}`}
-                  </p>
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm text-gray-500 truncate flex-1">
+                      {lastMsg?.type === 'text' ? lastMsg.content : `Sent a ${lastMsg?.type}`}
+                    </p>
+                    {lastMsg?.senderId === 'current_user' && (
+                       <span className="ml-2">
+                         {lastMsg.status === 'read' ? <CheckCheck size={14} className="text-brand-500"/> : 
+                          lastMsg.status === 'delivered' ? <CheckCheck size={14} className="text-gray-400"/> :
+                          <Check size={14} className="text-gray-300"/>}
+                       </span>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -292,12 +517,14 @@ const ChatRoomView = ({
   session, 
   otherUser, 
   onBack, 
-  onSend 
+  onSend,
+  onBlock
 }: { 
   session: ChatSession, 
   otherUser: UserProfile, 
   onBack: () => void, 
-  onSend: (content: string, type: Message['type']) => void 
+  onSend: (content: string, type: Message['type']) => void,
+  onBlock: (userId: string) => void
 }) => {
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -326,12 +553,33 @@ const ChatRoomView = ({
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white px-4 py-3 shadow-sm flex items-center gap-3 z-10">
-        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-gray-100">
-          <X size={20} className="text-gray-600" />
+      <div className="bg-white px-4 py-3 shadow-sm flex items-center justify-between z-10">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-gray-100">
+            <X size={20} className="text-gray-600" />
+          </button>
+          <div className="relative">
+             <img src={otherUser.avatarUrl} alt={otherUser.username} className="w-10 h-10 rounded-full object-cover" />
+             <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${getStatusColor(otherUser.status)}`}></div>
+          </div>
+          <div>
+             <h3 className="font-bold text-gray-900 leading-tight">{otherUser.username}</h3>
+             <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                {otherUser.status.charAt(0).toUpperCase() + otherUser.status.slice(1)}
+             </span>
+          </div>
+        </div>
+        <button 
+          onClick={() => {
+            if (window.confirm(`Are you sure you want to block ${otherUser.username}?`)) {
+              onBlock(otherUser.id);
+            }
+          }}
+          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full"
+          title="Block User"
+        >
+          <UserMinus size={20} />
         </button>
-        <img src={otherUser.avatarUrl} alt={otherUser.username} className="w-10 h-10 rounded-full object-cover" />
-        <h3 className="font-bold text-gray-900">{otherUser.username}</h3>
       </div>
 
       {/* Messages */}
@@ -345,9 +593,17 @@ const ChatRoomView = ({
                 {msg.type === 'image' && <img src={msg.content} alt="shared" className="rounded-lg max-w-full" />}
                 {msg.type === 'video' && <video src={msg.content} controls className="rounded-lg max-w-full" />}
                 {msg.type === 'audio' && <audio src={msg.content} controls className="w-full" />}
-                <span className={`text-[10px] block mt-1 ${isMe ? 'text-brand-200' : 'text-gray-400'}`}>
-                  {new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-                </span>
+                
+                <div className={`flex items-center justify-end gap-1 mt-1 ${isMe ? 'text-brand-200' : 'text-gray-400'}`}>
+                   <span className="text-[10px]">
+                      {new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                   </span>
+                   {isMe && (
+                      msg.status === 'read' ? <CheckCheck size={14} className="text-blue-200" /> : 
+                      msg.status === 'delivered' ? <CheckCheck size={14} className="text-brand-200/70" /> :
+                      <Check size={14} className="text-brand-200/70" />
+                   )}
+                </div>
               </div>
             </div>
           );
@@ -445,18 +701,40 @@ const StoreView = ({
 // 7. Settings Component
 const SettingsView = ({ 
   user, 
+  blockedUsers,
   onUpdate, 
-  onLogout 
+  onLogout,
+  onUnblock,
+  onRequestNotification
 }: { 
   user: UserProfile, 
+  blockedUsers: UserProfile[],
   onUpdate: (u: Partial<UserProfile>) => void, 
-  onLogout: () => void 
+  onLogout: () => void,
+  onUnblock: (id: string) => void,
+  onRequestNotification: () => void
 }) => {
   return (
     <div className="pb-24 p-4">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Settings</h2>
       
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden mb-6">
+        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+           <div>
+             <h3 className="font-medium text-gray-900">Status</h3>
+             <p className="text-xs text-gray-500">Set your availability</p>
+           </div>
+           <select 
+              value={user.status} 
+              onChange={(e) => onUpdate({status: e.target.value as any})}
+              className="text-sm border-gray-200 bg-gray-50 rounded-lg p-2 outline-none focus:ring-2 focus:ring-brand-500"
+           >
+              <option value="online">Online</option>
+              <option value="away">Away</option>
+              <option value="offline">Offline</option>
+           </select>
+        </div>
+
         <div className="p-4 border-b border-gray-100 flex justify-between items-center">
            <div>
              <h3 className="font-medium text-gray-900">Discovery Visibility</h3>
@@ -474,6 +752,40 @@ const SettingsView = ({
            </div>
             <input type="checkbox" checked={user.isPaused} onChange={e => onUpdate({isPaused: e.target.checked})} className="h-5 w-5 text-brand-600 rounded"/>
         </div>
+        <div className="p-4 border-t border-gray-100 flex justify-between items-center cursor-pointer" onClick={onRequestNotification}>
+           <div className="flex items-center gap-2">
+             <Bell size={18} className="text-brand-600"/>
+             <div>
+                <h3 className="font-medium text-gray-900">Notifications</h3>
+                <p className="text-xs text-gray-500">Enable push alerts</p>
+             </div>
+           </div>
+           <span className="text-xs text-blue-500 font-medium">Test</span>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden mb-6">
+        <div className="p-4 border-b border-gray-100 flex items-center gap-2">
+           <ShieldAlert size={18} className="text-brand-600"/>
+           <h3 className="font-medium text-gray-900">Blocked Users</h3>
+        </div>
+        {blockedUsers.length === 0 ? (
+           <p className="p-4 text-sm text-gray-400 text-center">No blocked users</p>
+        ) : (
+           <div className="divide-y divide-gray-100">
+              {blockedUsers.map(u => (
+                 <div key={u.id} className="p-4 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                       <img src={u.avatarUrl} className="w-8 h-8 rounded-full object-cover"/>
+                       <span className="text-sm font-medium">{u.username}</span>
+                    </div>
+                    <button onClick={() => onUnblock(u.id)} className="text-xs px-3 py-1 bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200">
+                       Unblock
+                    </button>
+                 </div>
+              ))}
+           </div>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -507,7 +819,19 @@ const App: React.FC = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [location, setLocation] = useState<{latitude: number, longitude: number} | undefined>(undefined);
-  const [packages] = useState(import('./constants').then(m => m.CREDIT_PACKAGES)); // Dynamic import handling simulation, actually just use constant
+  const [packages] = useState(import('./constants').then(m => m.CREDIT_PACKAGES)); 
+
+  // Refs for accessing state in async callbacks (like notifications)
+  const viewRef = useRef(view);
+  const activeSessionIdRef = useRef(activeSessionId);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
   
   // Load credit packages
   const CREDIT_PACKAGES = [
@@ -521,34 +845,109 @@ const App: React.FC = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          const { latitude, longitude } = position.coords;
           setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
+            latitude: latitude,
+            longitude: longitude
           });
+          
+          // Update mock users to be randomly distributed near this location (approx within 10km)
+          // 1 degree lat ~= 111km, so 0.1 ~= 11km
+          setNearbyUsers(prev => prev.map(u => ({
+            ...u,
+            location: {
+              latitude: latitude + (Math.random() - 0.5) * 0.1, 
+              longitude: longitude + (Math.random() - 0.5) * 0.1
+            }
+          })));
         },
         (error) => console.error("Location error", error)
       );
     }
   }, []);
 
+  // Notification Logic
+  const requestNotificationPermission = useCallback(async () => {
+    if ('Notification' in window) {
+       const permission = await Notification.requestPermission();
+       console.log("Notification permission:", permission);
+       return permission;
+    }
+    return 'denied';
+  }, []);
+
+  const sendNotification = (title: string, options?: NotificationOptions) => {
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(title, options);
+      } catch (e) {
+        console.error("Failed to send notification", e);
+      }
+    }
+  };
+
   // Login Handler
-  const handleLogin = () => {
+  const handleLogin = async () => {
     // Simulate Google Login success
     const newUser: UserProfile = {
       id: 'current_user',
       username: '',
       email: 'guest@gmail.com',
-      gender: Gender.Male, // Default
+      gender: Gender.Male, 
       age: 18,
       about: '',
       interests: [],
-      credits: 0, // Start with 0 credits? Or maybe give some free ones?
+      credits: 0, 
       isVisible: true,
-      isPaused: false
+      isPaused: false,
+      blockedUserIds: [],
+      status: 'online'
     };
     setUser(newUser);
     setView('profile-setup');
+    
+    // Request permissions
+    await requestNotificationPermission();
   };
+
+  // Simulate Random Incoming Chat Request (e.g. 15 seconds after login)
+  useEffect(() => {
+    if (user && view !== 'auth') {
+       const timer = setTimeout(() => {
+          // Find a user we haven't chatted with yet
+          const existingParticipants = sessions.map(s => s.participantId);
+          const availableUsers = nearbyUsers.filter(u => !existingParticipants.includes(u.id) && u.id !== user.id && !user.blockedUserIds.includes(u.id));
+          
+          if (availableUsers.length > 0) {
+            const randomUser = availableUsers[Math.floor(Math.random() * availableUsers.length)];
+            
+            const newSession: ChatSession = {
+               id: `session_${Date.now()}`,
+               participantId: randomUser.id,
+               messages: [{
+                  id: `msg_${Date.now()}`,
+                  senderId: randomUser.id,
+                  content: "Hey! I saw you nearby. Want to chat?",
+                  type: 'text',
+                  timestamp: Date.now(),
+                  status: 'delivered' // Incoming message is delivered
+               }],
+               lastMessageTimestamp: Date.now(),
+               unreadCount: 1
+            };
+
+            setSessions(prev => [...prev, newSession]);
+            
+            sendNotification(`New Chat Request from ${randomUser.username}`, {
+               body: "Hey! I saw you nearby. Want to chat?",
+               icon: randomUser.avatarUrl
+            });
+          }
+       }, 15000); // 15 seconds
+       
+       return () => clearTimeout(timer);
+    }
+  }, [user, nearbyUsers]); // Note: sessions isn't in dependency to avoid re-triggering constantly, user login triggers this once essentially.
 
   // Save Profile
   const handleSaveProfile = (data: Partial<UserProfile>) => {
@@ -595,13 +994,15 @@ const App: React.FC = () => {
   // Send Message
   const handleSendMessage = (content: string, type: Message['type']) => {
     if (!activeSessionId) return;
+    const currentSessionId = activeSessionId;
 
     const newMessage: Message = {
       id: `msg_${Date.now()}`,
       senderId: 'current_user',
       content,
       type,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      status: 'sent'
     };
 
     setSessions(prev => prev.map(s => {
@@ -614,6 +1015,113 @@ const App: React.FC = () => {
       }
       return s;
     }));
+
+    // Simulate Delivery
+    setTimeout(() => {
+       setSessions(prev => prev.map(s => {
+         if (s.id === currentSessionId) {
+           return {
+             ...s,
+             messages: s.messages.map(m => 
+               m.id === newMessage.id ? { ...m, status: 'delivered' as const } : m
+             )
+           };
+         }
+         return s;
+       }));
+    }, 1000);
+
+    // Simulate Read
+    setTimeout(() => {
+      setSessions(prev => prev.map(s => {
+        if (s.id === currentSessionId) {
+          return {
+            ...s,
+            messages: s.messages.map(m => 
+              m.id === newMessage.id ? { ...m, status: 'read' as const } : m
+            )
+          };
+        }
+        return s;
+      }));
+    }, 2500);
+
+    // --- SIMULATE INCOMING REPLY ---
+    // Find the participant
+    const session = sessions.find(s => s.id === currentSessionId);
+    const participantId = session?.participantId;
+    const participant = nearbyUsers.find(u => u.id === participantId);
+
+    if (participant) {
+       setTimeout(() => {
+          const replyText = type === 'text' 
+             ? `That's interesting! Tell me more about "${content.substring(0, 10)}..."`
+             : "Wow, nice media!";
+             
+          const replyMsg: Message = {
+             id: `msg_reply_${Date.now()}`,
+             senderId: participant.id,
+             content: replyText,
+             type: 'text',
+             timestamp: Date.now(),
+             status: 'delivered'
+          };
+
+          setSessions(prev => prev.map(s => {
+             if (s.id === currentSessionId) {
+                // Calculate unread count based on whether user is currently viewing this chat
+                // Since we are in a setSessions callback, we use the ref for the *current* view state at execution time
+                const isViewing = viewRef.current === 'chat-room' && activeSessionIdRef.current === s.id;
+                return {
+                   ...s,
+                   messages: [...s.messages, replyMsg],
+                   lastMessageTimestamp: Date.now(),
+                   unreadCount: isViewing ? 0 : s.unreadCount + 1
+                };
+             }
+             return s;
+          }));
+
+          // Trigger Notification if user is not in this chat room or app is hidden
+          const isUserInThisChat = viewRef.current === 'chat-room' && activeSessionIdRef.current === currentSessionId;
+          if (!isUserInThisChat || document.visibilityState === 'hidden') {
+             sendNotification(`New message from ${participant.username}`, {
+                body: replyText,
+                icon: participant.avatarUrl
+             });
+          }
+       }, 4000); // Reply 4 seconds after sending
+    }
+  };
+
+  // Block User
+  const handleBlockUser = (userIdToBlock: string) => {
+    // Update user profile
+    setUser(prev => {
+      if(!prev) return null;
+      return {
+        ...prev,
+        blockedUserIds: [...(prev.blockedUserIds || []), userIdToBlock]
+      };
+    });
+
+    // Remove chat session if exists
+    setSessions(prev => prev.filter(s => s.participantId !== userIdToBlock));
+
+    // Redirect to Nearby (or wherever makes sense, maybe chat list)
+    setActiveSessionId(null);
+    setView('nearby');
+  };
+
+  // Unblock User
+  const handleUnblockUser = (userIdToUnblock: string) => {
+     setUser(prev => {
+        if(!prev) return null;
+        return {
+           ...prev,
+           blockedUserIds: prev.blockedUserIds.filter(id => id !== userIdToUnblock)
+        };
+     });
   };
 
   // Buy Credits
@@ -629,6 +1137,15 @@ const App: React.FC = () => {
     }
   };
 
+  // Filtered data
+  // Exclude blocked users from nearby list
+  const activeNearbyUsers = nearbyUsers.filter(u => !user?.blockedUserIds?.includes(u.id));
+  // Exclude blocked users from chat sessions (though we deleted the session, this is a safety check)
+  const activeSessions = sessions.filter(s => !user?.blockedUserIds?.includes(s.participantId));
+  
+  // Get list of blocked user objects for Settings
+  const blockedUserObjects = nearbyUsers.filter(u => user?.blockedUserIds?.includes(u.id));
+
   // Routing / View Switcher
   if (view === 'auth') return <AuthView onLogin={handleLogin} />;
   if (view === 'profile-setup' && user) return <ProfileSetupView user={user} onSave={handleSaveProfile} />;
@@ -638,7 +1155,15 @@ const App: React.FC = () => {
     const session = sessions.find(s => s.id === activeSessionId);
     const otherUser = nearbyUsers.find(u => u.id === session?.participantId);
     if (session && otherUser) {
-      return <ChatRoomView session={session} otherUser={otherUser} onBack={() => setView('chat-list')} onSend={handleSendMessage} />;
+      return (
+         <ChatRoomView 
+            session={session} 
+            otherUser={otherUser} 
+            onBack={() => setView('chat-list')} 
+            onSend={handleSendMessage} 
+            onBlock={handleBlockUser}
+         />
+      );
     }
   }
 
@@ -646,10 +1171,19 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto relative shadow-2xl border-x border-gray-200">
       {/* Main Content Area */}
       <div className="min-h-screen">
-        {view === 'nearby' && <NearbyView users={nearbyUsers} onChat={handleStartChat} currentUserLocation={location} />}
-        {view === 'chat-list' && <ChatListView sessions={sessions} users={nearbyUsers} onSelectChat={(id) => { setActiveSessionId(id); setView('chat-room'); }} />}
+        {view === 'nearby' && <NearbyView users={activeNearbyUsers} onChat={handleStartChat} currentUserLocation={location} />}
+        {view === 'chat-list' && <ChatListView sessions={activeSessions} users={nearbyUsers} onSelectChat={(id) => { setActiveSessionId(id); setView('chat-room'); }} />}
         {view === 'store' && user && <StoreView credits={user.credits} packages={CREDIT_PACKAGES} onBuy={handleBuyCredits} />}
-        {view === 'settings' && user && <SettingsView user={user} onUpdate={(u) => setUser(prev => ({...prev!, ...u}))} onLogout={() => setView('auth')} />}
+        {view === 'settings' && user && (
+           <SettingsView 
+              user={user} 
+              blockedUsers={blockedUserObjects}
+              onUpdate={(u) => setUser(prev => ({...prev!, ...u}))} 
+              onLogout={() => setView('auth')}
+              onUnblock={handleUnblockUser}
+              onRequestNotification={requestNotificationPermission}
+           />
+        )}
       </div>
 
       {/* Bottom Navigation */}
@@ -659,7 +1193,7 @@ const App: React.FC = () => {
         </button>
         <button onClick={() => setView('chat-list')} className={`p-2 rounded-xl relative ${view === 'chat-list' ? 'text-brand-600 bg-brand-50' : 'text-gray-400'}`}>
           <MessageCircle size={24} />
-          {sessions.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
+          {sessions.some(s => s.unreadCount > 0) && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
         </button>
         <button onClick={() => setView('store')} className={`p-2 rounded-xl ${view === 'store' ? 'text-brand-600 bg-brand-50' : 'text-gray-400'}`}>
           <ShoppingBag size={24} />

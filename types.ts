@@ -23,6 +23,8 @@ export interface UserProfile {
   credits: number;
   isVisible: boolean;
   isPaused: boolean;
+  blockedUserIds: string[];
+  status: 'online' | 'away' | 'offline';
 }
 
 export interface Message {
@@ -31,6 +33,7 @@ export interface Message {
   content: string; // Text or URL for media
   type: 'text' | 'image' | 'video' | 'audio' | 'emoji';
   timestamp: number;
+  status: 'sent' | 'delivered' | 'read';
 }
 
 export interface ChatSession {

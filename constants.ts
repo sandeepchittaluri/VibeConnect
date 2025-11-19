@@ -29,7 +29,9 @@ export const MOCK_USERS: UserProfile[] = [
     credits: 0,
     isVisible: true,
     isPaused: false,
-    location: { latitude: 0, longitude: 0 } // Will be updated relative to user
+    location: { latitude: 0, longitude: 0 }, // Will be updated relative to user
+    blockedUserIds: [],
+    status: 'online'
   },
   {
     id: 'mock_2',
@@ -43,7 +45,9 @@ export const MOCK_USERS: UserProfile[] = [
     credits: 0,
     isVisible: true,
     isPaused: false,
-    location: { latitude: 0, longitude: 0 }
+    location: { latitude: 0, longitude: 0 },
+    blockedUserIds: [],
+    status: 'away'
   },
   {
     id: 'mock_3',
@@ -57,7 +61,9 @@ export const MOCK_USERS: UserProfile[] = [
     credits: 0,
     isVisible: true,
     isPaused: false,
-    location: { latitude: 0, longitude: 0 }
+    location: { latitude: 0, longitude: 0 },
+    blockedUserIds: [],
+    status: 'online'
   },
   {
     id: 'mock_4',
@@ -71,7 +77,9 @@ export const MOCK_USERS: UserProfile[] = [
     credits: 0,
     isVisible: true,
     isPaused: false,
-    location: { latitude: 0, longitude: 0 }
+    location: { latitude: 0, longitude: 0 },
+    blockedUserIds: [],
+    status: 'offline'
   },
    {
     id: 'mock_5',
@@ -85,6 +93,8 @@ export const MOCK_USERS: UserProfile[] = [
     credits: 0,
     isVisible: true,
     isPaused: false,
-    location: { latitude: 0, longitude: 0 }
+    location: { latitude: 0, longitude: 0 },
+    blockedUserIds: [],
+    status: 'online'
   }
 ];
