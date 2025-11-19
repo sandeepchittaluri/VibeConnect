@@ -1,0 +1,9 @@
+{
+  "name": "VibeConnect",
+  "description": "Connect with people nearby for casual dates and fun. Features AI-assisted profiles, media sharing, and location-based discovery.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
